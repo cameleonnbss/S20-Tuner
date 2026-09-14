@@ -114,6 +114,8 @@ object Sysfs {
         echo ZRAMU $(cat $ZRAM/mem_used_total 2>/dev/null)
         echo FPS $(dumpsys display 2>/dev/null | grep -m1 -E 'renderFrameRate|mRefreshRate=' | head -c 60)
         echo RATE $(settings get system user_refresh_rate 2>/dev/null)
+        echo AUTOST $(cat /data/local/tmp/s20tuner_auto.state 2>/dev/null)
+        echo LOAD $(cut -d' ' -f1 /proc/loadavg 2>/dev/null)
         echo UP $(cat /proc/uptime 2>/dev/null)
     """.trimIndent()
 }

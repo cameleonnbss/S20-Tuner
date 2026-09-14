@@ -28,7 +28,8 @@ data class LiveStatus(
     val memTotalKb: Long = 0, val memAvailKb: Long = 0,
     val swapTotalKb: Long = 0, val swapFreeKb: Long = 0, val zramUsedKb: Long = 0,
     val fpsText: String = "", val refreshRate: Int = 0,
-    val thermalConfig: String = ""
+    val thermalConfig: String = "",
+    val load: Float = 0f
 )
 
 data class UiState(
@@ -78,6 +79,7 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
             log("Device: ${dev.model} (${dev.codename}) — ${if (dev.isSupported) "supported" else "NOT officially supported, nodes guarded"}")
             log("CPU policies: ${dev.cpuPolicies.size} — GPU: ${if (dev.soc == "exynos990") "Mali-G77" else "Adreno 650"}")
             refreshProfiles()
+            refreshAuto()
             startPolling()
         }
     }
@@ -133,9 +135,11 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
             swapTotalKb = l("SWAPT"), swapFreeKb = l("SWAPF"), zramUsedKb = l("ZRAMU"),
             fpsText = map["FPS"] ?: "",
             refreshRate = i("RATE"),
-            thermalConfig = map["THERM"] ?: ""
+            thermalConfig = map["THERM"] ?: "",
+            load = map["LOAD"]?.toFloatOrNull() ?: 0f
         )
         _status.value = st
+        map["AUTOST"]?.let { if (it.isNotBlank()) autoState.value = it }
 
         fun push(list: MutableStateFlow<List<Int>>, v: Int, max: Int = 100) {
             val cur = list.value.toMutableList()
@@ -298,6 +302,47 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
 
     fun refreshBenchHistory() {
         benchHistory.value = Benchmark.history(getApplication())
+    }
+
+    // ---------- auto OC / UC ----------
+
+    val autoRunning = MutableStateFlow(false)
+    val autoMode = MutableStateFlow("auto")
+    val autoState = MutableStateFlow("init")
+    val autoLog = MutableStateFlow("")
+
+    fun refreshAuto() {
+        viewModelScope.launch(Dispatchers.IO) {
+            autoRunning.value = AutoEngine.running()
+            autoMode.value = AutoEngine.currentMode()
+            autoState.value = AutoEngine.currentState()
+        }
+    }
+
+    fun setAuto(on: Boolean, mode: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val msg = AutoEngine.setEnabled(getApplication(), on, mode)
+            log(msg)
+            _ui.value = _ui.value.copy(toast = msg)
+            refreshAuto()
+        }
+    }
+
+    fun changeAutoMode(mode: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            if (autoRunning.value) {
+                val msg = AutoEngine.setMode(mode)
+                log(msg)
+                _ui.value = _ui.value.copy(toast = msg)
+                refreshAuto()
+            } else {
+                autoMode.value = mode
+            }
+        }
+    }
+
+    fun readAutoLog() {
+        viewModelScope.launch(Dispatchers.IO) { autoLog.value = AutoEngine.tailLog() }
     }
 
     // ---------- misc helpers ----------

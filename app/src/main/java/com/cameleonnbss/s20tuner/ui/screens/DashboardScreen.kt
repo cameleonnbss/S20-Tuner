@@ -37,7 +37,7 @@ fun DashboardScreen(vm: TunerViewModel) {
             StatRow("Android", ui.device.android)
             StatRow("Kernel", ui.device.kernel)
             StatRow("ROM", ui.device.buildId)
-            StatRow("Root", if (ui.rootOk) "OK — Magisk ${Shell4.magiskV}" else "not granted")
+            StatRow("Root", if (ui.rootOk) "OK" else "not granted")
         }
 
         // --- live telemetry ---
@@ -92,5 +92,3 @@ fun StatRow(label: String, value: String) {
     }
 }
 
-/** tiny indirection for the dashboard root string */
-object Shell4 { val magiskV = com.cameleonnbss.s20tuner.core.Shell.magiskVersion() }

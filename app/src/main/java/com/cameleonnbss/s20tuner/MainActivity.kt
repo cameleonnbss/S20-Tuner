@@ -22,6 +22,7 @@ import com.cameleonnbss.s20tuner.ui.screens.*
 import kotlinx.coroutines.launch
 
 enum class Screen(val title: String, val icon: ImageVector) {
+    Auto("Auto OC", Icons.Filled.AutoMode),
     Dashboard("Dashboard", Icons.Filled.Dashboard),
     Cpu("CPU", Icons.Filled.Memory),
     Gpu("GPU", Icons.Filled.Speed),
@@ -56,7 +57,7 @@ fun AppRoot(vm: TunerViewModel) {
     val ui by vm.ui.collectAsState()
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    var screen by remember { mutableStateOf(Screen.Dashboard) }
+    var screen by remember { mutableStateOf(Screen.Auto) }
 
     LaunchedEffect(ui.toast) {
         if (ui.toast.isNotEmpty()) {
@@ -68,9 +69,9 @@ fun AppRoot(vm: TunerViewModel) {
     val compact = LocalConfiguration.current.screenWidthDp < 640
 
     if (compact) {
-        // phones: top tabs
+        // phones: scrollable top tabs
         Column {
-            TabRow(selectedTabIndex = screen.ordinal) {
+            ScrollableTabRow(selectedTabIndex = screen.ordinal, edgePadding = 8.dp) {
                 Screen.entries.forEach { s ->
                     Tab(
                         selected = screen == s,
@@ -113,6 +114,7 @@ fun AppRoot(vm: TunerViewModel) {
 @Composable
 fun ScreenContent(screen: Screen, vm: TunerViewModel) {
     when (screen) {
+        Screen.Auto -> AutoScreen(vm)
         Screen.Dashboard -> DashboardScreen(vm)
         Screen.Cpu -> CpuScreen(vm)
         Screen.Gpu -> GpuScreen(vm)
