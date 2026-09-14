@@ -11,8 +11,8 @@ android {
         applicationId = "com.cameleonnbss.s20tuner"
         minSdk = 30            // Android 11+: Samsung S20 shipped on 10 but custom ROMs are 11+
         targetSdk = 36
-        versionCode = 2
-        versionName = "1.1"
+        versionCode = 3
+        versionName = "2.0"
     }
 
     buildTypes {

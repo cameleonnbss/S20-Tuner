@@ -4,26 +4,19 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- gauge arc -->
+    <!-- speed dial arc -->
     <path
-        android:pathData="M30,66 A26,26 0 1,1 78,66"
-        android:strokeWidth="6"
-        android:strokeColor="#4CAF50"
-        android:strokeLineCap="round"
-        android:fillColor="#00000000" />
-    <!-- needle -->
-    <path
-        android:pathData="M54,64 L68,44"
+        android:pathData="M28,70 A30,30 0 1,1 80,70"
         android:strokeWidth="5"
         android:strokeColor="#4CAF50"
         android:strokeLineCap="round"
         android:fillColor="#00000000" />
-    <!-- hub -->
+    <!-- lightning bolt -->
     <path
-        android:pathData="M54,64 m-5,0 a5,5 0 1,1 10,0 a5,5 0 1,1 -10,0"
-        android:fillColor="#4CAF50" />
-    <!-- 120 text block -->
+        android:fillColor="#4CAF50"
+        android:pathData="M56,26 L42,56 L52,56 L46,80 L68,46 L56,46 L64,26 Z" />
+    <!-- baseline -->
     <path
-        android:pathData="M40,78 h28 v3 h-28 z"
+        android:pathData="M34,82 h40 v4 h-40 z"
         android:fillColor="#4CAF50" />
 </vector>
