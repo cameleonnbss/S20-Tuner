@@ -1,10 +1,8 @@
 #!/system/bin/sh
-# 990 OC — restore your refresh rate after boot (only if the app saved one)
+# 990 OC — re-apply your saved overclock after boot
 (
   sleep 12
-  R=$(cat /data/adb/990oc_rate 2>/dev/null)
-  if [ -n "$R" ]; then
-    settings put system peak_refresh_rate "$R.0"
-    settings put system min_refresh_rate "$R.0"
+  if [ -f /data/adb/990oc_boot.sh ]; then
+    sh /data/adb/990oc_boot.sh >/dev/null 2>&1
   fi
 ) &

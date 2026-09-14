@@ -1,6 +1,11 @@
-# GalaxyHz Lite
+# 990 OC
 
-Two buttons for the Galaxy S20: **120 Hz** and **60 Hz**.
+Minimal overclock / underclock app for the **Exynos 990** (Galaxy S20 series, rooted).
 
-Root not strictly required (tries settings first), but with root + the
-force_120hz_x1s module installed it also switches the panel mode directly.
+- **⚡ BEST** — one tap: max clocks, performance governors, CPU undervolt
+- **Stock / Underclock / Sleep** presets
+- **Custom**: per-cluster min/max (A55 / A76 / M5), CPU + GPU governors, GPU max clock, undervolt via `vdd_levels`
+- **Live** current / max MHz tiles for all three clusters + GPU, temp and load
+- Applies instantly and is **re-applied at boot** by the companion Magisk module (`990OC_Boot.zip`)
+
+Root required. Undervolt needs a kernel exposing `vdd_levels` (Masonic, Ragnarøk, …).
