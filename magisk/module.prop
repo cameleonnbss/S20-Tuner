@@ -1,6 +1,6 @@
 id=990oc_boot
 name=990 OC Boot
-version=v3.1
-versionCode=4
+version=v3.3
+versionCode=5
 author=cameleonnbss
 description=Re-applies your 990 OC refresh rate at boot. Install the 990 OC app to configure.
