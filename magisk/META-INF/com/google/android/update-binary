@@ -1,0 +1,37 @@
+#!/sbin/sh
+
+#################
+# Initialization
+#################
+
+umask 022
+
+# Load utility functions
+OUTFD=$2
+ZIPFILE=$3
+
+mount /data 2>/dev/null
+
+[ -f /data/adb/magisk/util_functions.sh ] && . /data/adb/magisk/util_functions.sh
+
+install_module() {
+  if [ -f /data/adb/magisk/util_functions.sh ]; then
+    . /data/adb/magisk/util_functions.sh
+    install_module
+    exit 0
+  fi
+  # fallback: raw unzip to modules dir
+  MODDIRNAME=$(grep '^id=' module.prop | cut -d= -f2)
+  MODPATH=/data/adb/modules/$MODDIRNAME
+  mkdir -p $MODPATH
+  unzip -o "$ZIPFILE" -x 'META-INF/*' -d $MODPATH >/dev/null 2>&1
+  chmod -R 755 $MODPATH
+  echo "module installed to $MODPATH"
+}
+
+if [ -f /data/adb/magisk/util_functions.sh ]; then
+  install_module
+else
+  [ -f /data/adb/magisk/busybox ] && aliases=$(echo) && . /data/adb/magisk/busybox 2>/dev/null
+  install_module
+fi
