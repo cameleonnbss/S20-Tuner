@@ -32,6 +32,8 @@ data class Ui(
     val mx: List<Int> = emptyList(),
     val gpu: Int = 0,
     val gmax: Int = 0,
+    val gpuCeil: Int = 0,
+    val ceilings: List<Int> = emptyList(),
     val temp: Float = 0f,
     val load: Float = 0f
 )
@@ -60,11 +62,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 val saved = withContext(Dispatchers.IO) { Core.currentCfg() }
                 _s.value = if (saved != null) _s.value.copy(
                     device = probe.device, hasVdd = probe.hasVdd, gpuGovs = probe.gpuGovs,
+                    ceilings = probe.ceilings, gpuCeil = probe.gpuCeil,
                     labels = labels, cur = List(n) { 0 }, mx = List(n) { 0 },
                     minPct = saved.minPct, maxPct = saved.maxPct, gov = saved.gov,
                     gpuMaxPct = saved.gpuMaxPct, gpuGov = saved.gpuGov, uv = saved.uv
                 ) else _s.value.copy(
                     device = probe.device, hasVdd = probe.hasVdd, gpuGovs = probe.gpuGovs,
+                    ceilings = probe.ceilings, gpuCeil = probe.gpuCeil,
                     labels = labels, cur = List(n) { 0 }, mx = List(n) { 0 }
                 )
                 poll()

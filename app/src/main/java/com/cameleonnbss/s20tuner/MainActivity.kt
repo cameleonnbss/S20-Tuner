@@ -51,11 +51,13 @@ fun App(vm: MainViewModel) {
             Text(
                 when {
                     !s.root -> "no root — allow it in Magisk"
-                    s.device.isNotBlank() -> "Exynos 990 · ${s.device}"
+                    s.device.isNotBlank() && Core.KNOWN_990.contains(s.device) -> "Exynos 990 · ${s.device}"
+                    s.device.isNotBlank() -> "${s.device} — Exynos 990 models only"
                     else -> "checking device…"
                 },
                 style = MaterialTheme.typography.bodySmall,
-                color = if (!s.root) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                color = if (!s.root || (s.device.isNotBlank() && !Core.KNOWN_990.contains(s.device)))
+                    MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
             )
         }
 
@@ -68,7 +70,7 @@ fun App(vm: MainViewModel) {
                 colors = ButtonDefaults.buttonColors(containerColor = Green, contentColor = Color.White),
                 enabled = s.root && !s.busy
             ) {
-                Text("⚡ BEST — max OC + undervolt", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
+                Text("⚡ BEST — hold max clocks", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 PresetCard("Stock", "everything default", Modifier.weight(1f), s.last == "Stock") { vm.applyPreset("Stock") }
@@ -84,10 +86,12 @@ fun App(vm: MainViewModel) {
         Section("Custom overclock") {
             val names = if (s.labels.isEmpty()) listOf("A55", "A76", "M5") else s.labels
             names.forEachIndexed { i, n ->
+                val ceil = s.ceilings.getOrElse(i) { 0 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text(n, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = Green)
                     Text(
-                        "min " + (if (s.minPct[i] < 0) "lowest" else "${s.minPct[i]}%") + " · max ${s.maxPct[i]}%",
+                        "min " + (if (s.minPct[i] < 0) "lowest" else "${s.minPct[i]}%") + " · max ${s.maxPct[i]}%" +
+                            (if (ceil > 0) " · fw ${ceil / 1000}" else ""),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                     )
@@ -120,7 +124,11 @@ fun App(vm: MainViewModel) {
 
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("GPU max clock", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = Green)
-                Text("${s.gpuMaxPct}%", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                Text(
+                    "${s.gpuMaxPct}%" + (if (s.gpuCeil > 0 && s.gpuCeil > (s.gmax.takeIf { it > 0 } ?: 0)) " · fw ${s.gpuCeil / 1000}" else ""),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
             }
             Slider(
                 value = s.gpuMaxPct.toFloat(),
@@ -181,7 +189,11 @@ fun App(vm: MainViewModel) {
                     listOf(Triple("GPU", s.gpu, s.gmax))
             tiles.chunked(2).forEach { r ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    r.forEach { t -> LiveTile(t.first, t.second, t.third, Modifier.weight(1f)) }
+                    r.forEach { t ->
+                        val idx = s.labels.indexOf(t.first)
+                        val fwCeil = if (idx >= 0) s.ceilings.getOrElse(idx) { 0 } else s.gpuCeil
+                        LiveTile(t.first, t.second, t.third, fwCeil, Modifier.weight(1f))
+                    }
                     if (r.size == 1) Spacer(Modifier.weight(1f))
                 }
             }
@@ -224,10 +236,15 @@ fun PresetCard(title: String, subtitle: String, modifier: Modifier = Modifier, a
 }
 
 @Composable
-fun LiveTile(label: String, cur: Int, max: Int, modifier: Modifier = Modifier) {
+fun LiveTile(label: String, cur: Int, max: Int, fwCeil: Int, modifier: Modifier = Modifier) {
     Card(modifier, shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Column(Modifier.padding(10.dp)) {
-            Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f))
+                if (fwCeil > max && fwCeil > 0) {
+                    Text("fw ${fwCeil / 1000}", style = MaterialTheme.typography.labelSmall, color = Color(0xFFFFB300))
+                }
+            }
             Row(verticalAlignment = Alignment.Bottom) {
                 Text(if (cur > 0) "${cur / 1000}" else "—", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Green)
                 if (max > 0) Text(" / ${max / 1000}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))

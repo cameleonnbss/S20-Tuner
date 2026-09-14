@@ -15,6 +15,8 @@ object Core {
         val tables: Map<String, List<Int>> = emptyMap(),
         val gpuTable: List<Int> = emptyList(),
         val gpuGovs: List<String> = emptyList(),
+        val ceilings: List<Int> = emptyList(),          // firmware hidden max per policy (ECT)
+        val gpuCeil: Int = 0,                           // firmware hidden GPU max (ECT G3D)
         val gpuMax: Int = 0,
         val hasVdd: Boolean = false,
         val device: String = ""
@@ -39,6 +41,26 @@ object Core {
         "Underclock" to Cfg(listOf(-1, -1, -1), listOf(80, 85, 85), "schedutil", 70, "simple_ondemand", -20000),
         "Sleep" to Cfg(listOf(-1, -1, -1), listOf(60, 65, 70), "powersave", 50, "powersave", 0)
     )
+
+    // devices shipped with Exynos 990 (codenames)
+    val KNOWN_990 = listOf("x1s", "y2s", "z3s", "c1s", "c2s", "r8s")
+
+    // ECT dvfs_table: domain -> max level (includes levels the kernel never registered)
+    fun parseEct(text: String): Map<String, Int> {
+        val out = HashMap<String, Int>()
+        var dom = ""
+        for (raw in text.lines()) {
+            val l = raw.trim()
+            if (l.startsWith("[DOMAIN NAME]")) {
+                dom = l.substringAfter(":").trim(); continue
+            }
+            if (l.startsWith("[LEVEL]")) {
+                val f = l.substringAfter(":").trim().substringBefore("(").trim().toIntOrNull() ?: continue
+                if (dom.isNotEmpty()) out[dom] = maxOf(out[dom] ?: 0, f)
+            }
+        }
+        return out
+    }
 
     fun su(script: String, timeoutMs: Long = 20000): Pair<Boolean, String> = try {
         val p = ProcessBuilder("su", "-c", "sh").start()
@@ -77,6 +99,8 @@ object Core {
         sb.append("echo P gtab\ncat $GPU/gpu_freq_table 2>/dev/null\n")
         sb.append("echo P ggov\ncat $GPU/gpu_available_governor 2>/dev/null\n")
         sb.append("echo P vdd\nhead -c 100 $VDD 2>/dev/null\n")
+        sb.append("mount -t debugfs none /sys/kernel/debug 2>/dev/null\n")
+        sb.append("echo P ect\ncat /sys/kernel/debug/ect/dvfs_table 2>/dev/null\n")
         val (_, out) = su(sb.toString(), 25000)
         val v = parseTagged(out)
 
@@ -108,11 +132,19 @@ object Core {
         val gpuTable = (v["gtab"] ?: "").trim()
             .split(Regex("[\\s]+")).mapNotNull { it.toIntOrNull() }.sorted()
 
+        // firmware hidden ceilings from ECT, aligned with policies (both ascending)
+        val ect = parseEct(v["ect"] ?: "")
+        val cpuCeils = ect.entries.filter { it.key.startsWith("CPUCL") }
+            .sortedBy { it.value }.map { it.value }
+        val ceilings = (0 until good.size).map { i -> cpuCeils.getOrElse(i) { 0 } }
+
         return Probe(
             pols = good,
             tables = tables,
             gpuTable = gpuTable,
             gpuGovs = (v["ggov"] ?: "").trim().split(Regex("[\\s]+")).filter { it.isNotBlank() },
+            ceilings = ceilings,
+            gpuCeil = ect["G3D"] ?: 0,
             gpuMax = v["gmax"]?.trim()?.toIntOrNull() ?: 0,
             hasVdd = (v["vdd"] ?: "").isNotBlank(),
             device = v["dev"]?.trim() ?: ""
