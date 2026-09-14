@@ -1,6 +1,6 @@
 id=990oc_boot
-name=990 OC - Boot Restore
-version=v2.0
-versionCode=20
+name=990 OC Boot
+version=v3.0
+versionCode=3
 author=cameleonnbss
-description=Re-applies the last 990 OC configuration at every boot (Exynos 990 Galaxy S20). Requires the 990 OC app with "Apply at boot" enabled so /data/adb/990oc/boot_apply.sh exists. Log: /data/local/tmp/990oc_boot.log
+description=Re-applies your 990 OC refresh rate at boot. Install the 990 OC app to configure.

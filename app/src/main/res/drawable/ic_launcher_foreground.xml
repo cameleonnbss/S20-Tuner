@@ -4,19 +4,16 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- speed dial arc -->
     <path
-        android:pathData="M28,70 A30,30 0 1,1 80,70"
+        android:pathData="M26,64 A28,28 0 1,1 82,64"
         android:strokeWidth="5"
         android:strokeColor="#4CAF50"
         android:strokeLineCap="round"
         android:fillColor="#00000000" />
-    <!-- lightning bolt -->
     <path
         android:fillColor="#4CAF50"
-        android:pathData="M56,26 L42,56 L52,56 L46,80 L68,46 L56,46 L64,26 Z" />
-    <!-- baseline -->
+        android:pathData="M58,24 L44,54 L54,54 L48,78 L70,44 L58,44 L66,24 Z" />
     <path
-        android:pathData="M34,82 h40 v4 h-40 z"
+        android:pathData="M34,80 h40 v4 h-40 z"
         android:fillColor="#4CAF50" />
 </vector>
