@@ -22,14 +22,16 @@ data class Ui(
     val maxPct: List<Int> = listOf(100, 100, 100),
     val gov: String = "schedutil",
     val gpuMaxPct: Int = 100,
-    val gpuGov: String = "simple_ondemand",
+    val gpuGov: String = "",
+    val gpuGovs: List<String> = emptyList(),
     val uv: Int = 0,
     val busy: Boolean = false,
-    // live values
-    val l0: Int = 0, val mx0: Int = 0,
-    val l4: Int = 0, val mx4: Int = 0,
-    val l7: Int = 0, val mx7: Int = 0,
-    val gpu: Int = 0, val gmax: Int = 0,
+    // clusters (dynamic, little -> prime)
+    val labels: List<String> = emptyList(),
+    val cur: List<Int> = emptyList(),
+    val mx: List<Int> = emptyList(),
+    val gpu: Int = 0,
+    val gmax: Int = 0,
     val temp: Float = 0f,
     val load: Float = 0f
 )
@@ -41,18 +43,30 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private var probe = Core.Probe()
 
+    private fun labelFor(maxKHz: Int): String = when {
+        maxKHz >= 2600000 -> "M5"
+        maxKHz >= 2200000 -> "A76"
+        else -> "A55"
+    }
+
     init {
         viewModelScope.launch {
             val (ok, _) = withContext(Dispatchers.IO) { Core.su("id -u") }
             _s.value = _s.value.copy(root = ok)
             if (ok) {
                 probe = withContext(Dispatchers.IO) { Core.probe() }
+                val labels = probe.pols.map { p -> labelFor(probe.tables[p]?.maxOrNull() ?: 0) }
+                val n = probe.pols.size
                 val saved = withContext(Dispatchers.IO) { Core.currentCfg() }
                 _s.value = if (saved != null) _s.value.copy(
-                    device = probe.device, hasVdd = probe.hasVdd,
+                    device = probe.device, hasVdd = probe.hasVdd, gpuGovs = probe.gpuGovs,
+                    labels = labels, cur = List(n) { 0 }, mx = List(n) { 0 },
                     minPct = saved.minPct, maxPct = saved.maxPct, gov = saved.gov,
                     gpuMaxPct = saved.gpuMaxPct, gpuGov = saved.gpuGov, uv = saved.uv
-                ) else _s.value.copy(device = probe.device, hasVdd = probe.hasVdd)
+                ) else _s.value.copy(
+                    device = probe.device, hasVdd = probe.hasVdd, gpuGovs = probe.gpuGovs,
+                    labels = labels, cur = List(n) { 0 }, mx = List(n) { 0 }
+                )
                 poll()
             }
         }
@@ -61,17 +75,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private fun poll() = viewModelScope.launch(Dispatchers.IO) {
         while (isActive) {
             try {
-                val (_, out) = Core.su(Core.pollScript(), 8000)
+                val (_, out) = Core.su(Core.pollScript(probe), 8000)
                 val m = HashMap<String, String>()
                 out.lines().forEach { l ->
                     val i = l.indexOf(' ')
                     if (i > 0) m[l.take(i)] = l.substring(i + 1).trim()
                 }
+                val n = probe.pols.size
                 _s.value = _s.value.copy(
-                    l0 = m["L0"]?.toIntOrNull() ?: 0, mx0 = m["MX0"]?.toIntOrNull() ?: 0,
-                    l4 = m["L4"]?.toIntOrNull() ?: 0, mx4 = m["MX4"]?.toIntOrNull() ?: 0,
-                    l7 = m["L7"]?.toIntOrNull() ?: 0, mx7 = m["MX7"]?.toIntOrNull() ?: 0,
-                    gpu = m["GPUF"]?.toIntOrNull() ?: 0, gmax = m["GMAX"]?.toIntOrNull() ?: 0,
+                    cur = (0 until n).map { m["L$it"]?.toIntOrNull() ?: 0 },
+                    mx = (0 until n).map { m["MX$it"]?.toIntOrNull() ?: 0 },
+                    gpu = m["GPUF"]?.toIntOrNull() ?: 0,
+                    gmax = m["GMAX"]?.toIntOrNull() ?: 0,
                     temp = (m["TEMP"]?.toFloatOrNull() ?: 0f) / 1000f,
                     load = m["LOAD"]?.toFloatOrNull() ?: 0f
                 )

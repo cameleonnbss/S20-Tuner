@@ -82,7 +82,7 @@ fun App(vm: MainViewModel) {
 
         // manual overclock
         Section("Custom overclock") {
-            val names = listOf("A55", "A76", "M5")
+            val names = if (s.labels.isEmpty()) listOf("A55", "A76", "M5") else s.labels
             names.forEachIndexed { i, n ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text(n, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = Green)
@@ -129,7 +129,13 @@ fun App(vm: MainViewModel) {
                 enabled = s.root
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Core.GPU_GOVS.forEach { g ->
+                FilterChip(
+                    selected = s.gpuGov.isBlank(),
+                    onClick = { vm.setGpuGov(""); vm.applyCustom() },
+                    label = { Text("default") },
+                    enabled = s.root
+                )
+                s.gpuGovs.forEach { g ->
                     FilterChip(
                         selected = s.gpuGov == g,
                         onClick = { vm.setGpuGov(g); vm.applyCustom() },
@@ -170,13 +176,14 @@ fun App(vm: MainViewModel) {
 
         // live
         Section("Live") {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                LiveTile("A55", s.l0, s.mx0, Modifier.weight(1f))
-                LiveTile("A76", s.l4, s.mx4, Modifier.weight(1f))
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                LiveTile("M5", s.l7, s.mx7, Modifier.weight(1f))
-                LiveTile("GPU", s.gpu, s.gmax, Modifier.weight(1f))
+            val tiles: List<Triple<String, Int, Int>> =
+                s.labels.mapIndexed { i, l -> Triple(l, s.cur.getOrElse(i) { 0 }, s.mx.getOrElse(i) { 0 }) } +
+                    listOf(Triple("GPU", s.gpu, s.gmax))
+            tiles.chunked(2).forEach { r ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    r.forEach { t -> LiveTile(t.first, t.second, t.third, Modifier.weight(1f)) }
+                    if (r.size == 1) Spacer(Modifier.weight(1f))
+                }
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Tile("CPU temp", "%.0f".format(s.temp), "°C", Modifier.weight(1f))

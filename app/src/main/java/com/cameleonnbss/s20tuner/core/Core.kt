@@ -3,8 +3,7 @@ package com.cameleonnbss.s20tuner.core
 import java.util.concurrent.TimeUnit
 
 object Core {
-    private const val CPU = "/sys/devices/system/cpu/cpufreq"
-    val POL = listOf("$CPU/policy0", "$CPU/policy4", "$CPU/policy7") // A55 / A76 / M5
+    private const val CPUDIR = "/sys/devices/system/cpu/cpufreq"
     private const val VDD = "/sys/devices/system/cpu/cpu0/cpufreq/vdd_levels"
     private const val GPU = "/sys/kernel/gpu"
     private const val UV_FILE = "/data/adb/990oc_uv"
@@ -12,7 +11,10 @@ object Core {
     private const val BOOT_FILE = "/data/adb/990oc_boot.sh"
 
     data class Probe(
+        val pols: List<String> = emptyList(),           // sorted little -> prime
         val tables: Map<String, List<Int>> = emptyMap(),
+        val gpuTable: List<Int> = emptyList(),
+        val gpuGovs: List<String> = emptyList(),
         val gpuMax: Int = 0,
         val hasVdd: Boolean = false,
         val device: String = ""
@@ -23,13 +25,13 @@ object Core {
         val maxPct: List<Int> = listOf(100, 100, 100),   // percent of table max
         val gov: String = "schedutil",
         val gpuMaxPct: Int = 100,
-        val gpuGov: String = "simple_ondemand",
+        val gpuGov: String = "",                          // empty = leave GPU governor alone
         val uv: Int = 0                                  // microvolts, negative = undervolt
     )
 
     val BEST = Cfg(
         minPct = listOf(80, 85, 90), maxPct = listOf(100, 100, 100),
-        gov = "performance", gpuMaxPct = 100, gpuGov = "performance", uv = -10000
+        gov = "performance", gpuMaxPct = 100, gpuGov = "", uv = -10000
     )
 
     val PRESETS = linkedMapOf(
@@ -37,9 +39,6 @@ object Core {
         "Underclock" to Cfg(listOf(-1, -1, -1), listOf(80, 85, 85), "schedutil", 70, "simple_ondemand", -20000),
         "Sleep" to Cfg(listOf(-1, -1, -1), listOf(60, 65, 70), "powersave", 50, "powersave", 0)
     )
-
-    val GOVS = listOf("schedutil", "performance", "powersave", "conservative", "ondemand")
-    val GPU_GOVS = listOf("simple_ondemand", "performance", "powersave")
 
     fun su(script: String, timeoutMs: Long = 20000): Pair<Boolean, String> = try {
         val p = ProcessBuilder("su", "-c", "sh").start()
@@ -52,17 +51,7 @@ object Core {
         Pair(false, e.message ?: "su failed")
     }
 
-    fun probe(): Probe {
-        val sb = StringBuilder()
-        POL.forEach { p ->
-            sb.append("echo P ${p}_av\n")
-            sb.append("cat $p/scaling_available_frequencies 2>/dev/null\n")
-        }
-        sb.append("echo P dev\ngetprop ro.product.device\n")
-        sb.append("echo P gmax\ncat $GPU/gpu_max_clock 2>/dev/null\n")
-        sb.append("echo P vdd\nhead -c 100 $VDD 2>/dev/null\n")
-        val (_, out) = su(sb.toString(), 25000)
-
+    private fun parseTagged(out: String): Map<String, String> {
         val values = HashMap<String, String>()
         var cur = ""
         val acc = StringBuilder()
@@ -77,48 +66,96 @@ object Core {
             }
         }
         if (cur.isNotEmpty()) values[cur] = acc.toString().trim()
+        return values
+    }
+
+    fun probe(): Probe {
+        val sb = StringBuilder()
+        sb.append("echo P pols\nls -d $CPUDIR/policy* 2>/dev/null\n")
+        sb.append("echo P dev\ngetprop ro.product.device\n")
+        sb.append("echo P gmax\ncat $GPU/gpu_max_clock 2>/dev/null\n")
+        sb.append("echo P gtab\ncat $GPU/gpu_freq_table 2>/dev/null\n")
+        sb.append("echo P ggov\ncat $GPU/gpu_available_governor 2>/dev/null\n")
+        sb.append("echo P vdd\nhead -c 100 $VDD 2>/dev/null\n")
+        val (_, out) = su(sb.toString(), 25000)
+        val v = parseTagged(out)
+
+        // dynamic policies, sorted little -> prime by their max frequency
+        val pols = (v["pols"] ?: "").lines()
+            .map { it.trim() }
+            .filter { it.contains("policy") }
+            .distinct()
+            .sortedBy { it.substringAfterLast("policy").toIntOrNull() ?: 99 }
 
         val tables = HashMap<String, List<Int>>()
-        POL.forEach { p ->
-            values["${p}_av"]?.let {
-                tables[p] = it.split(" ").mapNotNull { n -> n.toIntOrNull() }.sorted()
+        if (pols.isNotEmpty()) {
+            val sb2 = StringBuilder()
+            pols.forEach { p ->
+                sb2.append("echo P t${pols.indexOf(p)}\ncat $p/scaling_available_frequencies 2>/dev/null\n")
+            }
+            val (_, out2) = su(sb2.toString(), 20000)
+            val v2 = parseTagged(out2)
+            pols.forEachIndexed { i, p ->
+                v2["t$i"]?.let {
+                    tables[p] = it.split(Regex("[\\s]+")).mapNotNull { n -> n.toIntOrNull() }.sorted()
+                }
             }
         }
+        // keep only policies that actually have a table, ordered by max (little->prime)
+        val good = pols.filter { (tables[it]?.maxOrNull() ?: 0) > 0 }
+            .sortedBy { tables[it]?.maxOrNull() ?: 0 }
+
+        val gpuTable = (v["gtab"] ?: "").trim()
+            .split(Regex("[\\s]+")).mapNotNull { it.toIntOrNull() }.sorted()
+
         return Probe(
+            pols = good,
             tables = tables,
-            gpuMax = values["gmax"]?.trim()?.toIntOrNull() ?: 0,
-            hasVdd = (values["vdd"] ?: "").isNotBlank(),
-            device = values["dev"]?.trim() ?: ""
+            gpuTable = gpuTable,
+            gpuGovs = (v["ggov"] ?: "").trim().split(Regex("[\\s]+")).filter { it.isNotBlank() },
+            gpuMax = v["gmax"]?.trim()?.toIntOrNull() ?: 0,
+            hasVdd = (v["vdd"] ?: "").isNotBlank(),
+            device = v["dev"]?.trim() ?: ""
         )
     }
 
-    fun pollScript(): String = """
-        echo L0 $(cat ${POL[0]}/scaling_cur_freq 2>/dev/null)
-        echo MX0 $(cat ${POL[0]}/scaling_max_freq 2>/dev/null)
-        echo L4 $(cat ${POL[1]}/scaling_cur_freq 2>/dev/null)
-        echo MX4 $(cat ${POL[1]}/scaling_max_freq 2>/dev/null)
-        echo L7 $(cat ${POL[2]}/scaling_cur_freq 2>/dev/null)
-        echo MX7 $(cat ${POL[2]}/scaling_max_freq 2>/dev/null)
-        echo GPUF $(cat $GPU/gpu_freq 2>/dev/null)
-        echo GMAX $(cat $GPU/gpu_max_clock 2>/dev/null)
-        echo TEMP $(cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null)
-        echo LOAD $(cut -d' ' -f1 /proc/loadavg 2>/dev/null)
-    """.trimIndent()
+    fun pollScript(pr: Probe): String = StringBuilder().apply {
+        pr.pols.forEachIndexed { i, p ->
+            append("echo L$i \$(cat $p/scaling_cur_freq 2>/dev/null)\n")
+            append("echo MX$i \$(cat $p/scaling_max_freq 2>/dev/null)\n")
+        }
+        append("echo GPUF \$(cat $GPU/gpu_clock 2>/dev/null || cat $GPU/gpu_freq 2>/dev/null)\n")
+        append("echo GMAX \$(cat $GPU/gpu_max_clock 2>/dev/null)\n")
+        append("echo TEMP \$(cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null)\n")
+        append("echo LOAD \$(cut -d' ' -f1 /proc/loadavg 2>/dev/null)\n")
+    }.toString()
 
-    // guarded clock writes for one cluster
-    private fun clocks(sb: StringBuilder, pol: String, gov: String, minV: Int, maxV: Int) {
-        sb.append("[ -f $pol/scaling_governor ] && echo '$gov' > $pol/scaling_governor 2>/dev/null\n")
-        sb.append("[ -f $pol/scaling_max_freq ] && echo $maxV > $pol/scaling_max_freq 2>/dev/null\n")
-        sb.append("[ -f $pol/scaling_min_freq ] && echo $minV > $pol/scaling_min_freq 2>/dev/null\n")
+    // nearest allowed GPU table value <= target (never exceeds the kernel table)
+    private fun gpuTarget(pr: Probe, pct: Int): Int? {
+        if (pr.gpuTable.isEmpty()) return null
+        val stock = pr.gpuTable.maxOrNull() ?: return null
+        val want = stock * pct / 100
+        return pr.gpuTable.filter { it <= want }.maxOrNull() ?: pr.gpuTable.first()
     }
 
-    private fun absMinMax(c: Cfg, pr: Probe, i: Int): Pair<Int, Int>? {
-        val t = pr.tables[POL[i]].orEmpty()
-        val mx = t.maxOrNull() ?: return null
-        val mn = t.minOrNull() ?: 0
-        val minV = if (c.minPct[i] in 1..99) mx * c.minPct[i] / 100 else mn
-        return Pair(minV, mx * c.maxPct[i] / 100)
-    }
+    private fun clockLines(pr: Probe, c: Cfg): String = StringBuilder().apply {
+        pr.pols.forEachIndexed { i, pol ->
+            val t = pr.tables[pol].orEmpty()
+            val mx = t.maxOrNull() ?: return@forEachIndexed
+            val mn = t.minOrNull() ?: 0
+            val minV = if (i < c.minPct.size && c.minPct[i] in 1..99) mx * c.minPct[i] / 100 else mn
+            val maxV = if (i < c.maxPct.size) mx * c.maxPct[i] / 100 else mx
+            append("[ -f $pol/scaling_governor ] && echo '${c.gov}' > $pol/scaling_governor 2>/dev/null\n")
+            append("[ -f $pol/scaling_max_freq ] && echo $maxV > $pol/scaling_max_freq 2>/dev/null\n")
+            append("[ -f $pol/scaling_min_freq ] && echo $minV > $pol/scaling_min_freq 2>/dev/null\n")
+        }
+        gpuTarget(pr, c.gpuMaxPct)?.let { g ->
+            append("[ -f $GPU/gpu_max_clock ] && echo $g > $GPU/gpu_max_clock 2>/dev/null\n")
+        }
+        if (c.gpuGov.isNotBlank()) {
+            append("[ -f $GPU/gpu_governor ] && echo '${c.gpuGov}' > $GPU/gpu_governor 2>/dev/null\n")
+        }
+    }.toString()
 
     // diff-based undervolt so repeated applies never compound
     private fun uvShift(target: Int, sb: StringBuilder) {
@@ -132,29 +169,14 @@ object Core {
     }
 
     fun applyCfg(c: Cfg, pr: Probe): Pair<Boolean, String> {
+        val clocks = clockLines(pr, c)
         val live = StringBuilder("mkdir -p /data/adb\n")
-        POL.forEachIndexed { i, pol ->
-            val (mn, mx) = absMinMax(c, pr, i) ?: return@forEachIndexed
-            clocks(live, pol, c.gov, mn, mx)
-        }
+        live.append(clocks)
         uvShift(c.uv, live)
-        if (pr.gpuMax > 0) {
-            live.append("[ -f $GPU/gpu_max_clock ] && echo ${pr.gpuMax * c.gpuMaxPct / 100} > $GPU/gpu_max_clock 2>/dev/null\n")
-        }
-        live.append("[ -f $GPU/gpu_governor ] && echo '${c.gpuGov}' > $GPU/gpu_governor 2>/dev/null\n")
-
-        // boot script: same values, but kernel vdd table is stock right after boot
+        // boot script: same values; kernel vdd table is stock right after boot
         val boot = StringBuilder("#!/system/bin/sh\n# generated by 990 OC\necho 0 > $UV_FILE 2>/dev/null\n")
-        POL.forEachIndexed { i, pol ->
-            val (mn, mx) = absMinMax(c, pr, i) ?: return@forEachIndexed
-            clocks(boot, pol, c.gov, mn, mx)
-        }
+        boot.append(clocks)
         uvShift(c.uv, boot)
-        if (pr.gpuMax > 0) {
-            boot.append("[ -f $GPU/gpu_max_clock ] && echo ${pr.gpuMax * c.gpuMaxPct / 100} > $GPU/gpu_max_clock 2>/dev/null\n")
-        }
-        boot.append("[ -f $GPU/gpu_governor ] && echo '${c.gpuGov}' > $GPU/gpu_governor 2>/dev/null\n")
-
         live.append("cat > $BOOT_FILE <<'EOFB'\n${boot}EOFB\nchmod 755 $BOOT_FILE\n")
         live.append("echo '${ser(c)}' > $CFG_FILE 2>/dev/null\n")
         return su(live.toString())
